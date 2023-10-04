@@ -9,7 +9,7 @@
 To install the `gen-corim` command, do:
 
 ```
-$ go install github.com/veraison/services/gen-corim@latest
+$ go install github.com/veraison/gen-corim@latest
 ```
 
 ## Usage
