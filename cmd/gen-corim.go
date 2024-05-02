@@ -263,8 +263,12 @@ func GetMeasurementsFromComponents(swComponents []psatoken.SwComponent, config [
 
 	for _, component := range swComponents {
 		refValID := comid.NewPSARefValID(*component.SignerID)
-		refValID.SetLabel(*component.MeasurementType)
-		refValID.SetVersion(*component.Version)
+		if component.MeasurementType != nil {
+			refValID.SetLabel(*component.MeasurementType)
+		}
+		if component.Version != nil {
+			refValID.SetVersion(*component.Version)
+		}
 		measurement := comid.NewPSAMeasurement(*refValID)
 		measurement.AddDigest(1, *component.MeasurementValue)
 		measurements.AddMeasurement(measurement)
