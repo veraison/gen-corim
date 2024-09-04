@@ -141,19 +141,17 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 		return err
 	}
 
-	measurements := GetMeasurementsFromComponents(schemeClaims.swComponents, schemeClaims.config, *attestation_scheme == "cca")
-
-	//creating a new reference value containing the measurements and the implementation ID from the evidence token
+	//creating new reference values containing the measurements and the implementation ID from the evidence token
 	class := comid.NewClassImplID(schemeClaims.implID)
 
-	refVal := comid.ReferenceValue{
-		Environment:  comid.Environment{Class: class},
-		Measurements: measurements,
+	refVals, err := GetRefValsFromComponents(schemeClaims, class, *attestation_scheme == "cca")
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return err
 	}
 
-	//replacing the reference values from the template with the created reference value
-	referenceValues := append(*new([]comid.ReferenceValue), refVal)
-	comidClaims.Triples.ReferenceValues = &referenceValues
+	//replacing the reference values from the template with the created reference values
+	comidClaims.Triples.ReferenceValues = refVals
 
 	keys, err := CreateVerifKeysFromJWK(*key_file)
 	if err != nil {
@@ -161,10 +159,13 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 		return err
 	}
 
-	instance := comid.NewInstance()
-	instance.SetUEID(schemeClaims.instID)
+	instance, err := comid.NewInstance(schemeClaims.instID, comid.UEIDType)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return err
+	}
 
-	verifKey := comid.AttestVerifKey{
+	verifKey := comid.KeyTriple{
 		Environment: comid.Environment{
 			Class:    class,
 			Instance: instance,
@@ -172,8 +173,8 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 		VerifKeys: keys,
 	}
 
-	attestVerifKey := append(*new([]comid.AttestVerifKey), verifKey)
-	comidClaims.Triples.AttestVerifKeys = &attestVerifKey
+	comidClaims.Triples.AttestVerifKeys = nil
+	comidClaims.AddAttestVerifKey(verifKey)
 
 	err = CreateComidFromClaims(comidClaims, dir)
 	if err != nil {
@@ -257,31 +258,52 @@ func GetComidClaimsFromTemplate(template_dir string) (*comid.Comid, error) {
 	return comidClaims, nil
 }
 
-// GetMeasurementsFromComponents creates a new measurements list to hold the measurements extracted from the evidence token
-func GetMeasurementsFromComponents(swComponents []psatoken.SwComponent, config []byte, isCca bool) comid.Measurements {
-	measurements := comid.NewMeasurements()
+// GetRefValsFromComponents creates a new reference values list to hold the ref values extracted from the evidence token
+func GetRefValsFromComponents(schemeClaims *SchemeClaims, class *comid.Class, isCca bool) (*comid.ValueTriples, error) {
+	env := comid.Environment{Class: class}
+	refVals := comid.NewValueTriples()
 
-	for _, component := range swComponents {
-		refValID := comid.NewPSARefValID(*component.SignerID)
+	for _, component := range schemeClaims.swComponents {
+		refValID, err := comid.NewPSARefValID(*component.SignerID)
+		if err != nil {
+			return nil, err
+		}
 		if component.MeasurementType != nil {
 			refValID.SetLabel(*component.MeasurementType)
 		}
 		if component.Version != nil {
 			refValID.SetVersion(*component.Version)
 		}
-		measurement := comid.NewPSAMeasurement(*refValID)
+		measurement, err := comid.NewPSAMeasurement(*refValID)
+		if err != nil {
+			return nil, err
+		}
 		measurement.AddDigest(1, *component.MeasurementValue)
-		measurements.AddMeasurement(measurement)
+
+		refVal := comid.ValueTriple{
+			Environment: env,
+			Measurement: *measurement,
+		}
+		refVals.Add(&refVal)
 	}
 
 	//adding cca specific measurement
 	if isCca {
 		configID := comid.CCAPlatformConfigID("cfg v1.0.0")
-		measurement := comid.NewCCAPlatCfgMeasurement(configID).SetRawValueBytes(config, []byte{})
-		measurements.AddMeasurement(measurement)
+		measurement, err := comid.NewCCAPlatCfgMeasurement(configID)
+		if err != nil {
+			return nil, err
+		}
+		measurement.SetRawValueBytes(schemeClaims.config, []byte{})
+
+		refVal := comid.ValueTriple{
+			Environment: env,
+			Measurement: *measurement,
+		}
+		refVals.Add(&refVal)
 	}
 
-	return *measurements
+	return refVals, nil
 }
 
 // GetEvidenceClaims reads in the evidence token and extracts the claims
