@@ -115,29 +115,26 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(dir)
 
 	//validate evidence cryptographically and write to a file
 	evcli_cmd := exec.Command("evcli", *attestation_scheme, "check", "--token="+*evidence_file, "--key="+*key_file, "--claims="+dir+"/output-evidence-claims.json")
 	if err = evcli_cmd.Run(); err != nil {
-		_ = os.RemoveAll(dir)
 		return fmt.Errorf("error verifying evidence token: %w", err)
 	}
 
 	comidClaims, err := GetComidClaimsFromTemplate(*template_dir)
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
 	evidenceClaims, err := GetEvidenceClaims(*attestation_scheme, *evidence_file)
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
 	schemeClaims, err := GetSchemeClaimsFromEvidenceClaims(evidenceClaims, *attestation_scheme == "cca")
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
@@ -146,7 +143,6 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 
 	refVals, err := GetRefValsFromComponents(schemeClaims, class, *attestation_scheme == "cca")
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
@@ -155,13 +151,11 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 
 	keys, err := CreateVerifKeysFromJWK(*key_file)
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
 	instance, err := comid.NewInstance(schemeClaims.instID, comid.UEIDType)
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
@@ -178,7 +172,6 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 
 	err = CreateComidFromClaims(comidClaims, dir)
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return err
 	}
 
@@ -190,11 +183,8 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 	corim_cmd := exec.Command("cocli", "corim", "create", "--template="+*template_dir+"/corim-template.json", "--comid="+dir+"/comid-claims.cbor", "--output="+*corim_file)
 
 	if err := corim_cmd.Run(); err != nil {
-		_ = os.RemoveAll(dir)
 		return fmt.Errorf("error thrown by cocli corim create: %w", err)
 	}
-
-	_ = os.RemoveAll(dir)
 
 	fmt.Println(`>> generated "` + *corim_file + `" using "` + *evidence_file + `"`)
 
