@@ -134,16 +134,22 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 		return err
 	}
 
-	//creating new reference values containing the measurements and the implementation ID from the evidence token
-	class := comid.NewClassImplID(schemeClaims.implID)
-
-	refVals, err := GetRefValsFromComponents(schemeClaims, class, *attestation_scheme == "cca")
+	measurements, err := GetMeasurementsFromComponents(schemeClaims, *attestation_scheme == "cca")
 	if err != nil {
 		return err
 	}
 
-	//replacing the reference values from the template with the created reference values
-	comidClaims.Triples.ReferenceValues = refVals
+	//creating a new reference value containing the measurements and the implementation ID from the evidence token
+	class := comid.NewClassImplID(schemeClaims.implID)
+
+	refVal := comid.ValueTriple{
+		Environment:  comid.Environment{Class: class},
+		Measurements: *measurements,
+	}
+
+	//replacing the reference values from the template with the created reference value
+	comidClaims.Triples.ReferenceValues = comid.NewValueTriples()
+	comidClaims.Triples.ReferenceValues.Add(&refVal)
 
 	keys, err := CreateVerifKeysFromJWK(*key_file)
 	if err != nil {
@@ -244,10 +250,9 @@ func GetComidClaimsFromTemplate(template_dir string) (*comid.Comid, error) {
 	return comidClaims, nil
 }
 
-// GetRefValsFromComponents creates a new reference values list to hold the ref values extracted from the evidence token
-func GetRefValsFromComponents(schemeClaims *SchemeClaims, class *comid.Class, isCca bool) (*comid.ValueTriples, error) {
-	env := comid.Environment{Class: class}
-	refVals := comid.NewValueTriples()
+// GetMeasurementsFromComponents creates a new measurements list to hold the measurements extracted from the evidence token
+func GetMeasurementsFromComponents(schemeClaims *SchemeClaims, isCca bool) (*comid.Measurements, error) {
+	measurements := comid.NewMeasurements()
 
 	for _, component := range schemeClaims.swComponents {
 		signerID, err := component.GetSignerID()
@@ -275,12 +280,7 @@ func GetRefValsFromComponents(schemeClaims *SchemeClaims, class *comid.Class, is
 			return nil, err
 		}
 		measurement.AddDigest(1, measurementValue)
-
-		refVal := comid.ValueTriple{
-			Environment: env,
-			Measurement: *measurement,
-		}
-		refVals.Add(&refVal)
+		measurements.Add(measurement)
 	}
 
 	//adding cca specific measurement
@@ -291,15 +291,10 @@ func GetRefValsFromComponents(schemeClaims *SchemeClaims, class *comid.Class, is
 			return nil, err
 		}
 		measurement.SetRawValueBytes(schemeClaims.config, []byte{})
-
-		refVal := comid.ValueTriple{
-			Environment: env,
-			Measurement: *measurement,
-		}
-		refVals.Add(&refVal)
+		measurements.Add(measurement)
 	}
 
-	return refVals, nil
+	return measurements, nil
 }
 
 // GetEvidenceClaims reads in the evidence token and extracts the claims

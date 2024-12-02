@@ -9,7 +9,7 @@ require (
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.4
 	github.com/veraison/ccatoken v1.3.1
-	github.com/veraison/corim v1.1.3-0.20240827153408-de149e9b7682
+	github.com/veraison/corim v1.1.3-0.20241003171039-fe09de9f3764
 	github.com/veraison/eat v0.0.0-20220117140849-ddaf59d69f53
 	github.com/veraison/psatoken v1.2.1-0.20240719122628-26fe500fd5d4
 )
