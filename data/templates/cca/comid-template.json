@@ -15,6 +15,33 @@
         }
     ],
     "triples": {
-        "reference-values": []
+        "reference-values": [
+          {
+            "environment": {
+              "class": {
+                "id": {
+                  "type": "psa.impl-id",
+                  "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                },
+                "vendor": "ACME",
+                "model": "RoadRunner"
+              }
+            },
+            "measurements": [
+              {
+                "key": {
+                  "type": "cca.platform-config-id",
+                  "value": "cfg v1.0.0"
+                },
+                "value": {
+                  "raw-value": {
+                    "type": "bytes",
+                    "value": "AQID"
+                  }
+                }
+              }
+            ]
+          }
+        ]
     }
 }

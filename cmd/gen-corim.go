@@ -16,6 +16,7 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/spf13/cobra"
 	"github.com/veraison/ccatoken"
+	ccatoken_platform "github.com/veraison/ccatoken/platform"
 	"github.com/veraison/corim/comid"
 	"github.com/veraison/eat"
 	"github.com/veraison/psatoken"
@@ -128,26 +129,27 @@ func generate(attestation_scheme *string, evidence_file *string, key_file *strin
 		return err
 	}
 
-	evidenceClaims, err := GetEvidenceClaims(*attestation_scheme, *evidence_file)
+	schemeClaims, err := GetSchemeClaimsFromEvidence(*attestation_scheme, *evidence_file)
 	if err != nil {
 		return err
 	}
 
-	schemeClaims, err := GetSchemeClaimsFromEvidenceClaims(evidenceClaims, *attestation_scheme == "cca")
+	measurements, err := GetMeasurementsFromComponents(schemeClaims, *attestation_scheme == "cca")
 	if err != nil {
 		return err
 	}
 
-	//creating new reference values containing the measurements and the implementation ID from the evidence token
+	//creating a new reference value containing the measurements and the implementation ID from the evidence token
 	class := comid.NewClassImplID(schemeClaims.implID)
 
-	refVals, err := GetRefValsFromComponents(schemeClaims, class, *attestation_scheme == "cca")
-	if err != nil {
-		return err
+	refVal := comid.ValueTriple{
+		Environment:  comid.Environment{Class: class},
+		Measurements: *measurements,
 	}
 
-	//replacing the reference values from the template with the created reference values
-	comidClaims.Triples.ReferenceValues = refVals
+	//replacing the reference values from the template with the created reference value
+	comidClaims.Triples.ReferenceValues = comid.NewValueTriples()
+	comidClaims.Triples.ReferenceValues.Add(&refVal)
 
 	keys, err := CreateVerifKeysFromJWK(*key_file)
 	if err != nil {
@@ -248,33 +250,37 @@ func GetComidClaimsFromTemplate(template_dir string) (*comid.Comid, error) {
 	return comidClaims, nil
 }
 
-// GetRefValsFromComponents creates a new reference values list to hold the ref values extracted from the evidence token
-func GetRefValsFromComponents(schemeClaims *SchemeClaims, class *comid.Class, isCca bool) (*comid.ValueTriples, error) {
-	env := comid.Environment{Class: class}
-	refVals := comid.NewValueTriples()
+// GetMeasurementsFromComponents creates a new measurements list to hold the measurements extracted from the evidence token
+func GetMeasurementsFromComponents(schemeClaims *SchemeClaims, isCca bool) (*comid.Measurements, error) {
+	measurements := comid.NewMeasurements()
 
 	for _, component := range schemeClaims.swComponents {
-		refValID, err := comid.NewPSARefValID(*component.SignerID)
+		signerID, err := component.GetSignerID()
 		if err != nil {
 			return nil, err
 		}
-		if component.MeasurementType != nil {
-			refValID.SetLabel(*component.MeasurementType)
+		refValID, err := comid.NewPSARefValID(signerID)
+		if err != nil {
+			return nil, err
 		}
-		if component.Version != nil {
-			refValID.SetVersion(*component.Version)
+		measurementType, err := component.GetMeasurementType()
+		if err == nil {
+			refValID.SetLabel(measurementType)
+		}
+		version, err := component.GetVersion()
+		if err == nil {
+			refValID.SetVersion(version)
 		}
 		measurement, err := comid.NewPSAMeasurement(*refValID)
 		if err != nil {
 			return nil, err
 		}
-		measurement.AddDigest(1, *component.MeasurementValue)
-
-		refVal := comid.ValueTriple{
-			Environment: env,
-			Measurement: *measurement,
+		measurementValue, err := component.GetMeasurementValue()
+		if err != nil {
+			return nil, err
 		}
-		refVals.Add(&refVal)
+		measurement.AddDigest(1, measurementValue)
+		measurements.Add(measurement)
 	}
 
 	//adding cca specific measurement
@@ -285,19 +291,14 @@ func GetRefValsFromComponents(schemeClaims *SchemeClaims, class *comid.Class, is
 			return nil, err
 		}
 		measurement.SetRawValueBytes(schemeClaims.config, []byte{})
-
-		refVal := comid.ValueTriple{
-			Environment: env,
-			Measurement: *measurement,
-		}
-		refVals.Add(&refVal)
+		measurements.Add(measurement)
 	}
 
-	return refVals, nil
+	return measurements, nil
 }
 
 // GetEvidenceClaims reads in the evidence token and extracts the claims
-func GetEvidenceClaims(attestation_scheme string, evidence_file string) (psatoken.IClaims, error) {
+func GetSchemeClaimsFromEvidence(attestation_scheme string, evidence_file string) (*SchemeClaims, error) {
 	content, err := os.ReadFile(evidence_file)
 	if err != nil {
 		return nil, fmt.Errorf("error reading the evidence token: %w", err)
@@ -306,29 +307,21 @@ func GetEvidenceClaims(attestation_scheme string, evidence_file string) (psatoke
 	var evidenceClaims psatoken.IClaims
 
 	if attestation_scheme == "psa" {
-		var evidence psatoken.Evidence
-
-		err = evidence.FromCOSE(content)
+		evidence, err := psatoken.DecodeAndValidateEvidenceFromCOSE(content)
 		if err != nil {
 			return nil, fmt.Errorf("error umarshalling evidence token: %w", err)
 		}
 
 		evidenceClaims = evidence.Claims
 	} else {
-		var evidence ccatoken.Evidence
-
-		err = evidence.FromCBOR(content)
+		evidence, err := ccatoken.DecodeAndValidateEvidenceFromCBOR(content)
 		if err != nil {
 			return nil, fmt.Errorf("error umarshalling evidence token: %w", err)
 		}
 
 		evidenceClaims = evidence.PlatformClaims
 	}
-	return evidenceClaims, nil
-}
 
-// GetSchemeClaimsFromEvidenceClaims stores the key components of the the claims in the desired format
-func GetSchemeClaimsFromEvidenceClaims(evidenceClaims psatoken.IClaims, isCca bool) (*SchemeClaims, error) {
 	swComponents, err := evidenceClaims.GetSoftwareComponents()
 	if err != nil {
 		return nil, fmt.Errorf("error extracting software components: %w", err)
@@ -348,8 +341,8 @@ func GetSchemeClaimsFromEvidenceClaims(evidenceClaims psatoken.IClaims, isCca bo
 	var ueid eat.UEID = instID
 
 	var config []byte
-	if isCca {
-		config, err = evidenceClaims.GetConfig()
+	if attestation_scheme == "cca" {
+		config, err = evidenceClaims.(ccatoken_platform.IClaims).GetConfig()
 		if err != nil {
 			return nil, fmt.Errorf("error extracting configuration data: %w", err)
 		}
@@ -364,7 +357,7 @@ func GetSchemeClaimsFromEvidenceClaims(evidenceClaims psatoken.IClaims, isCca bo
 }
 
 type SchemeClaims struct {
-	swComponents []psatoken.SwComponent
+	swComponents []psatoken.ISwComponent
 	implID       comid.ImplID
 	instID       eat.UEID
 	config       []byte
