@@ -1,0 +1,69 @@
+name: CI 
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build-and-test:
+    name: Build and Run Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Step 2: Set up Go environment
+      - name: Set Up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21' 
+
+      # Step 3: Cache Go modules to speed up builds
+      - name: Cache Go Modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            # Cache the Go module download directory
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      # Step 4: Install dependencies
+      - name: Install Dependencies
+        run: |
+          go mod tidy
+          go mod download
+
+      # Step 5: Install evcli and cocli
+      - name: Install evcli via go install
+        run: go install github.com/veraison/evcli@latest
+
+      - name: Install cocli via go install
+        run: go install github.com/veraison/cocli@latest
+
+      # Step 6: Verify that evcli and cocli are installed
+      - name: Verify evcli Installation
+        run: |
+          evcli --version
+
+      - name: Verify cocli Installation
+        run: |
+          cocli --version
+
+      # Step 7: Build the project 
+      - name: Build Project
+        run: go build -v ./...
+
+      # Step 8: Run Unit Tests
+      - name: Run Unit Tests
+        run: go test ./... -v -cover
+
+      
