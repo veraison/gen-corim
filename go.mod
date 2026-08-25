@@ -1,8 +1,6 @@
 module github.com/veraison/gen-corim
 
-go 1.22
-
-toolchain go1.23.0
+go 1.25.0
 
 require (
 	github.com/lestrrat-go/jwx/v2 v2.0.11
@@ -33,7 +31,7 @@ require (
 	github.com/veraison/go-cose v1.3.0 // indirect
 	github.com/veraison/swid v1.1.1-0.20230911094910-8ffdd07a22ca // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/crypto v0.12.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
